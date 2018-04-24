@@ -1,5 +1,6 @@
 <?php
-namespace CraftBlue;
+
+namespace SimpleSql;
 
 use PDO;
 
@@ -65,38 +66,54 @@ class SimpleSql {
      * however we really only support those
      *
      * @access  public
-     * @param   string  $host       The database hostname or IP address
-     * @param   string  $username   The username with access to the db
-     * @param   string  $password   The password correlating to the username
-     * @param   string  $database   The database name to connect to
-     * @param   string  $driver     The PDO driver (mysql, ibm, mssql, oracle, postgresql, sqlite)
+     * @param   array  $database   List config database
      * @return  void
      */
-    public function __construct($host, $username, $password, $database, $driver = 'mysql')
-    {
-        // handle connection
-        $this->connect($host, $username, $password, $database, $driver);
+    public function __construct(array $database = array()) {
+        $this->connect($database);
+    }
+
+    /**
+     * Check configuration array 
+     * to make sure core configuration array is formatted properly
+     *
+     * @access private
+     * @param Array $config
+     * @return Array
+     */
+    private function _checkConfig($config) {
+        if (!array_key_exists('host', $config)) {
+            throw new Exception('Database Host (host) is not defined in configuration array.');
+        }
+        if (!array_key_exists('database', $config)) {
+            throw new Exception('Database name (name) is not defined in configuration array.');
+        }
+        if (!array_key_exists('username', $config)) {
+            throw new Exception('Database username (user) is not defined in configuration array.');
+        }
+        if (!array_key_exists('password', $config)) {
+            throw new Exception('Database password (pass) is not defined in configuration array.');
+        }
+        if (!array_key_exists('driver', $config)) {
+            throw new Exception('The database drive is not defined in the configuration array, eg Mysql, Sqlite.');
+        }
+        return $config;
     }
 
     /**
      * Handles connecting and reconnecting.
      *
      * @access  public
-     * @param   string  $host       The database hostname or IP address
-     * @param   string  $username   The username with access to the db
-     * @param   string  $password   The password correlating to the username
-     * @param   string  $database   The database name to connect to
-     * @param   string  $driver     The PDO driver (mysql, ibm, mssql, oracle, postgresql, sqlite)
+     * @param   array  $database   List config database
      * @return  void
      */
-    public function connect($host, $username, $password, $database, $driver = 'mysql')
-    {
-        // store connection settings
-        $this->host = $host;
-        $this->username = $username;
-        $this->password = $password;
-        $this->database = $database;
-        $this->driver = $driver;
+    public function connect(array $database = array()) {
+        $this->_checkConfig($database);
+        $this->host = $database['host'];
+        $this->username = $database['username'];
+        $this->password = $database['password'];
+        $this->database = $database['database'];
+        $this->driver = $database['driver'];
 
         // use settings to connect
         $this->reconnect();
@@ -109,8 +126,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function reconnect()
-    {
+    public function reconnect() {
         // close any open cursors
         $this->closeCursor();
 
@@ -127,11 +143,7 @@ class SimpleSql {
         }
 
         // let any exceptions bubble, not our problem
-        $this->pdo = new \PDO(
-            $connStr,
-            $this->username,
-            $this->password,
-            $opts
+        $this->pdo = new \PDO($connStr, $this->username, $this->password, $opts
         );
 
         // trigger exceptions
@@ -146,19 +158,18 @@ class SimpleSql {
      * @param   string  $database
      * @return  void
      */
-    public function setDatabase($database)
-    {
+    public function setDatabase(array $database = array()) {
         // ensure we reset back to defaults
         $this->reset();
 
         // reconnect
-        $this->connect($this->host, $this->username, $this->password, $database);
+        $this->connect($database);
     }
 
     /**
      * Standard PDO method for querying. Assumes the user has escaped
      * everything themselves via ->quote(). You should instead by using a prepared
-     * statement method, i.e. select, fetchRow, fetchRows, insert, update, or
+     * statement method, i.e. select, first, all, insert, update, or
      * delete.
      *
      * @access  public
@@ -166,8 +177,7 @@ class SimpleSql {
      * @param   int     $fetch_mode
      * @return  PDOStatement|false
      */
-    public function query($sql, $fetch_mode = \PDO::FETCH_ASSOC)
-    {
+    public function query($sql, $fetch_mode = \PDO::FETCH_ASSOC) {
         $this->closeCursor();
 
         $this->sql = $sql;
@@ -181,7 +191,6 @@ class SimpleSql {
 
                 $this->stmt = $this->pdo->query($sql, $fetch_mode);
                 return $this->stmt;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -189,7 +198,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -199,15 +207,14 @@ class SimpleSql {
      * Standard PDO method for exec, generally used for commands which return
      * rows. Assumes the user has escaped everything themselves via ->quote().
      * Only use this function if you know what you're doing. You should instead
-     * by using a prepared statement, i.e. select, fetchRow, fetchRows, insert,
+     * by using a prepared statement, i.e. select, first, all, insert,
      * update, or delete.
      *
      * @access  public
      * @param   string  $sql
      * @return  PDOStatement|false
      */
-    public function exec($sql)
-    {
+    public function exec($sql) {
         $this->closeCursor();
 
         $this->sql = $sql;
@@ -221,7 +228,6 @@ class SimpleSql {
 
                 $this->stmt = $this->pdo->exec($sql);
                 return $this->stmt;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -229,7 +235,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -245,8 +250,7 @@ class SimpleSql {
      * @param   array   $data
      * @param   int     $fetch_mode
      */
-    public function fetchRow($sql, $data = NULL, $fetch_mode = \PDO::FETCH_ASSOC)
-    {
+    public function first($sql, $data = NULL, $fetch_mode = \PDO::FETCH_ASSOC) {
         $this->closeCursor();
 
         $this->sql = $sql;
@@ -268,7 +272,6 @@ class SimpleSql {
                 }
 
                 return FALSE;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -276,7 +279,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -292,8 +294,7 @@ class SimpleSql {
      * @param   array   $data
      * @param   int     $fetch_mode
      */
-    public function fetchRows($sql, $data = NULL, $fetch_mode = \PDO::FETCH_ASSOC)
-    {
+    public function all($sql, $data = NULL, $fetch_mode = \PDO::FETCH_ASSOC) {
         $this->closeCursor();
         $this->sql = $sql;
         $data = $this->_fixData($data);
@@ -313,7 +314,6 @@ class SimpleSql {
                 }
 
                 return FALSE;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -321,7 +321,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -335,8 +334,7 @@ class SimpleSql {
      * @param   array   $data
      * @return  int|bool
      */
-    public function insert($table, array $data)
-    {
+    public function insert($table, array $data) {
         $this->closeCursor();
 
         $sql = 'INSERT INTO ' . $table . ' SET ';
@@ -372,7 +370,6 @@ class SimpleSql {
                 }
 
                 return FALSE;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -380,7 +377,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -395,8 +391,7 @@ class SimpleSql {
      * @param   array   $where
      * @return  int|bool
      */
-    public function update($table, array $data, $where = array())
-    {
+    public function update($table, array $data, $where = array()) {
         $this->closeCursor();
 
         // generate SQL
@@ -432,7 +427,7 @@ class SimpleSql {
                 }
             }
             $sql .= implode(' AND ', $whereClause);
-            
+
             // merge data for prepared statement
             $data = array_merge($data, $where);
         }
@@ -452,7 +447,6 @@ class SimpleSql {
                 }
 
                 return FALSE;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -460,7 +454,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -478,8 +471,7 @@ class SimpleSql {
      * @param   array   $where
      * @return  int|bool
      */
-    public function delete($table, array $where = array())
-    {
+    public function delete($table, array $where = array()) {
         $this->closeCursor();
 
         // generate SQL
@@ -517,7 +509,6 @@ class SimpleSql {
                 }
 
                 return FALSE;
-
             } catch (Exception $e) {
                 if (strpos($e->getMessage(), '2006 MySQL') !== false) {
                     $this->reconnect();
@@ -525,7 +516,6 @@ class SimpleSql {
                     throw $e;
                 }
             }
-
         } while ($attempts++ < self::MAX_RETRIES);
 
         throw new Exception('Exhausted retries on timed out DB connection.');
@@ -541,8 +531,7 @@ class SimpleSql {
      * @access  public
      * @return  int
      */
-    public function count()
-    {
+    public function count() {
         if (!empty($this->stmt)) {
             return $this->stmt->rowCount();
         }
@@ -554,14 +543,13 @@ class SimpleSql {
      * Quote a string for prevention of SQL injection. To be used with
      * ->query(). Usage of this method in combination with query() is
      * not recommended. You should instead by using a prepared statement
-     * method, i.e. select, fetchRow, fetchRows, insert, update, or delete.
+     * method, i.e. select, first, all, insert, update, or delete.
      *
      * @access  public
      * @param   string  $string
      * @param   int     $parameter_type
      */
-    public function quote($string, $parameter_type = \PDO::PARAM_STR)
-    {
+    public function quote($string, $parameter_type = \PDO::PARAM_STR) {
         return $this->pdo->quote($string, $parameter_type);
     }
 
@@ -571,8 +559,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function beginTransaction()
-    {
+    public function beginTransaction() {
         if (!$this->pdo->inTransaction()) {
             $this->pdo->beginTransaction();
         }
@@ -584,8 +571,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function commit()
-    {
+    public function commit() {
         if ($this->pdo->inTransaction()) {
             $this->pdo->commit();
         }
@@ -597,8 +583,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function rollback()
-    {
+    public function rollback() {
         if ($this->pdo->inTransaction()) {
             $this->pdo->rollBack();
         }
@@ -610,8 +595,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function startTransaction()
-    {
+    public function startTransaction() {
         $this->beginTransaction();
     }
 
@@ -621,13 +605,12 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function endTransaction()
-    {
+    public function endTransaction() {
         $this->commit();
     }
 
     /**
-     * PDO doesn't play nicely with unfetched rows, i.e. if you ran `fetchRows`
+     * PDO doesn't play nicely with unfetched rows, i.e. if you ran `all`
      * and ended your loop early and then tried another query. This would mean
      * the PDOStatement object was left in a state with unfetched rows. To fix
      * this little problem, we need to ensure that we close the cursor prior
@@ -636,8 +619,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function closeCursor()
-    {
+    public function closeCursor() {
         if ($this->stmt) {
             $this->stmt->closeCursor();
         }
@@ -649,8 +631,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function close()
-    {
+    public function close() {
         $this->pdo = null;
     }
 
@@ -661,8 +642,7 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function reset()
-    {
+    public function reset() {
         $this->sql = NULL;
         $this->stmt = NULL;
         $this->lastInsertId = NULL;
@@ -676,8 +656,7 @@ class SimpleSql {
      * @param   mixed   $data
      * @return  mixed
      */
-    protected function _fixData($data)
-    {
+    protected function _fixData($data) {
         if ($data !== null) {
             if (is_array($data)) {
                 if (!$this->_isAssociative($data)) {
@@ -698,8 +677,7 @@ class SimpleSql {
      * @param   array       $arr
      * @return  bool
      */
-    protected function _isAssociative($arr)
-    {
+    protected function _isAssociative($arr) {
         return (bool) count(array_filter(array_keys($arr), 'is_string'));
     }
 
@@ -710,8 +688,7 @@ class SimpleSql {
      * @param   int     $fetch_mode
      * @return  int
      */
-    protected function _validFetchMode($fetch_mode)
-    {
+    protected function _validFetchMode($fetch_mode) {
         if (isset($this->_fetchConstants[$fetch_mode])) {
             $fetch_mode;
         }
@@ -725,8 +702,8 @@ class SimpleSql {
      * @access  public
      * @return  void
      */
-    public function __destruct()
-    {
+    public function __destruct() {
         $this->pdo = null;
     }
+
 }
